@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<style>
+        #inventario {
+		    background-image:url(inventteste.png);
+		    background-size: cover;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 200px;
+            height: 200px;
+            display: none; 
+            z-index: 1000;
+        }
+        #inventarioButton {
+            position: absolute;
+            top: 300px;
+            right: 300px;
+            width: 50px;
+            height: 50px;
+            background-color: blue; /* Para teste visual */
+            cursor: pointer;
+            z-index: 1000;
+        }
+    </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  
+    <link rel="stylesheet" href="2d.css">
+    <title>Jogo 2D com Projéteis</title>
+</head>
+<body>
+    <img id="pauseButton" src="pause.png" alt="Pause Button" style="width: 75px; height: 75px; cursor: pointer; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;">
+    <img id="playButton" src="Play.png" alt="Play Button" style="display: none; width: 75px; height: 75px;cursor: pointer; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;">
+    <canvas id="janelaDoJogo" width="1280" height="600"></canvas>
+	<audio id="jumpSound" src="pulosom.mp3" preload="auto"></audio>
+	<audio id="runSound" src="corrersom.mp3" preload="auto"></audio>
+	<audio id="shootSound" src="disparosom.mp3" preload="auto"></audio>
+	
+	  <button id="inventarioButton">Mostrar/Esconder Inventário</button>
+    <div id="inventario"></div>
+	
+	
+    <script>
+        var desenhador = document.getElementById("janelaDoJogo").getContext("2d");
+        var fundo = new Image();
+        var personagem = new Image();
+        var posicaoX = 0;
+        var direcao = "nenhuma";
+        var pulando = false;
+        var alturaPuloInicial = 420;
+        var alturaPuloAtual = alturaPuloInicial;
+        var puloVelocidade = 10;
+        var gravidade = 0.3;
+        var framesCorrendo = [];
+        var framesPulando = [];
+        var numFrames = 10;
+        var inimigos = [];
+        var projeteis = [];
+        var vidaMaxima = 1000;
+        var vidaAtual = vidaMaxima;
+        var cenarioWidth = 1280;
+        var ultimoDanoTempo = 0;
+        var intervaloDano = 3500;
+        var chao = new Image();
+        var numExpansoes = 0;
+        var maxExpansoes = 1;
+        var projetilImg = new Image();
+        var projetilVelocidade = 5;
+        var limite = new Image();
+        var larguraChao = 200;
+        var alturaChao = 100;
+        var jogoPausado = false;
+        var ultimoTempo = 0;
+        var tempoDecorrido = 0;
+        var viradoParaDireita = true;
+		var jumpSound = document.getElementById("jumpSound");
+		var runSound = document.getElementById("runSound");
+		var score = 0;
+		var pausaInicial = 0;
+        var pausaFinal = 0;
+        var tempoPausado = 0;
+		var playButton;
+		var moedas = [];
+        var moedaImg = new Image();
+        var contagemMoedas = 0;
+		var mostrarHitbox = false;
+		var somMoeda = new Audio('moeda.mp3');
+		var moedasColetadas = [];
+        var coinh  = new Image();
+		
+         document.getElementById('inventarioButton').addEventListener('click', function() {
+            var inventario = document.getElementById('inventario');
+            if (inventario.style.display === 'none' || inventario.style.display === '') {
+                inventario.style.display = 'block';
+            } else {
+                inventario.style.display = 'none';
+            }
+        });
+
+        function IniciaJogo() {
+            fundo.src = "fundoc.png";
+            personagem.src = "personagemg.png";
+            chao.src = "chao.png";
+            projetilImg.src = "disparo.png";
+            limite.src = "";
+			moedaImg.src = "moeda.png";
+			coinh.src = "coinh.png";
+            CarregaImagens();
+            criarInimigos();
+		    criarMoedas(); 
+            window.addEventListener("keydown", ApertouTeclado);
+            window.addEventListener("keyup", SoltouTeclado);
+            ultimoTempo = performance.now();
+            document.getElementById("pauseButton").addEventListener("click", togglePause);
+            playButton = document.getElementById("playButton");
+            playButton.addEventListener("click", togglePause);
+            requestAnimationFrame(DesenhaJogo);
+		   
+        }
+
+     function DesenhaJogo(tempoAtual) {
+    if (!jogoPausado) {
+        var deltaTime = tempoAtual - ultimoTempo;
+        ultimoTempo = tempoAtual;
+				
+				
+        desenhador.clearRect(0, 0, cenarioWidth, 600);
+		
+        desenhador.drawImage(fundo, 0, 0, cenarioWidth, 600);
+
+        for (let i = 0; i <= Math.ceil(cenarioWidth / larguraChao); i++) {
+            desenhador.drawImage(chao, i * larguraChao, 500, larguraChao, alturaChao);
+        }
+		 desenharMoedas(); 
+
+        moedas.forEach(function(moeda) {
+            if (mostrarHitbox) desenharHitbox(moeda);
+        });
+		
+        if (direcao == "direita") {
+            posicaoX += 10;
+            viradoParaDireita = true;
+            if (numExpansoes == maxExpansoes && posicaoX + 100 > cenarioWidth - 100) {
+                posicaoX = cenarioWidth - 200;
+            } else if (posicaoX > cenarioWidth - 100) {
+                expandirCenario();
+            }
+            runSound.play();
+        } else if (direcao == "esquerda") {
+            posicaoX -= 10;
+            viradoParaDireita = false;
+            if (posicaoX < 0) {
+                posicaoX = 0;
+            }
+            runSound.play();
+        }
+
+        if (pulando) {
+            alturaPuloAtual -= puloVelocidade;
+            puloVelocidade -= gravidade;
+
+            if (alturaPuloAtual >= alturaPuloInicial) {
+                pulando = false;
+                alturaPuloAtual = alturaPuloInicial;
+                puloVelocidade = 10;
+            }
+            jumpSound.play();
+        }
+
+      
+        desenhador.save();
+        if (!viradoParaDireita) {
+            desenhador.scale(-1, 1);
+            desenhador.translate(-2 * posicaoX - 200, 0);
+        }
+
+        if (direcao == "direita" || direcao == "esquerda") {
+            var frameAtualCorrendo = Math.floor(Date.now() / 100) % numFrames;
+            desenhador.drawImage(framesCorrendo[frameAtualCorrendo], posicaoX, alturaPuloAtual, 200, 200);
+        } else if (pulando) {
+            var frameAtualPulando = Math.floor(Date.now() / 100) % numFrames;
+            desenhador.drawImage(framesPulando[frameAtualPulando], posicaoX, alturaPuloAtual, 200, 200);
+        } else {
+            desenhador.drawImage(personagem, posicaoX, alturaPuloAtual, 200, 200);
+        }
+		    if (mostrarHitbox) desenharHitbox({ x: posicaoX, y: alturaPuloAtual, width: 200, height: 200 });
+
+        desenhador.restore();
+
+inimigos.forEach(function(inimigo) {
+    inimigo.update(posicaoX);
+    inimigo.draw(desenhador);
+    if (mostrarHitbox) desenharHitbox(inimigo);
+
+    if (colisao({ x: posicaoX, y: alturaPuloAtual, width: 200, height: 200 }, inimigo) && Date.now() - ultimoDanoTempo > intervaloDano) {
+        tomarDano(inimigo instanceof Boss ? 250 : 100);
+        ultimoDanoTempo = Date.now();
+    }
+
+});
+        
+        desenharProjeteis();
+        atualizarProjeteis();
+        desenharBarraVida();
+        desenharPontuacao();
+        verificarColisaoMoedas();
+        desenharContagemMoedas(); 
+		animarMoedaColetada();
+        
+        if (numExpansoes == maxExpansoes) {
+            desenhador.drawImage(limite, cenarioWidth - 100, 400, 100, 200);
+        }
+
+       
+        if (vidaAtual <= 0) {
+            console.log("Game Over");
+            return;
+        }
+    requestAnimationFrame(DesenhaJogo);
+	}
+}
+		
+   function togglePause() {
+    jogoPausado = !jogoPausado;
+
+    if (jogoPausado) {
+        tempoPausado = performance.now() - ultimoTempo;
+        playButton.style.display = "block";
+        document.getElementById("pauseButton").style.display = "none";
+    } else {
+        ultimoTempo = performance.now() - tempoPausado;
+        playButton.style.display = "none";
+        document.getElementById("pauseButton").style.display = "block";
+        requestAnimationFrame(DesenhaJogo);
+    }
+}
+	function ApertouTeclado(evento) {
+    if (evento.keyCode == 68) { 
+        direcao = "direita";
+        viradoParaDireita = true;
+        if (runSound.paused) runSound.play();
+    } else if (evento.keyCode == 65) { 
+        direcao = "esquerda";
+        viradoParaDireita = false;
+        if (runSound.paused) runSound.play();
+    } else if (evento.keyCode == 87 && !pulando) { 
+        pulando = true;
+        jumpSound.currentTime = 0;
+        jumpSound.play();
+    } else if (evento.keyCode == 69) { 
+        atirar();
+    } else if (evento.keyCode == 81) { 
+        mostrarHitbox = !mostrarHitbox;
+    }
+}
+ 
+
+    function SoltouTeclado(evento) {
+    if (evento.keyCode == 65 || evento.keyCode == 68) {
+        direcao = "nenhuma";
+        runSound.pause();
+        runSound.currentTime = 0;
+    }
+}
+        function CarregaImagens() {
+            console.log("Carregando imagens...");
+
+            for (var j = 1; j <= numFrames; j++) {
+                var imgCorrendo = new Image();
+                imgCorrendo.src = "correndo/correndo" + j + ".png";
+                framesCorrendo.push(imgCorrendo);
+            }
+
+            for (var k = 1; k <= numFrames; k++) {
+                var imgPulando = new Image();
+                imgPulando.src = "jump/jump" + k + ".png";
+                framesPulando.push(imgPulando);
+            }
+        }
+
+     class Inimigo {
+    constructor(x, y, speed, imgSrc) {
+        this.x = x;
+        this.y = y;
+        this.width = 80; 
+        this.height = 80;
+        this.speed = speed;
+        this.vida = 100;
+
+        this.img = new Image();
+        this.img.src = imgSrc;
+    }
+
+    draw(ctx) {
+        ctx.drawImage(this.img, this.x, this.y, 100, 100); 
+        this.desenharBarraVida(ctx);
+    }
+
+    update(playerX) {
+        if (this.x < playerX) {
+            this.x += this.speed;
+        } else {
+            this.x -= this.speed;
+        }
+    }
+
+    desenharBarraVida(ctx) {
+        var larguraBarra = this.width * (this.vida / 100);
+        var alturaBarra = 10;
+        var x = this.x;
+        var y = this.y - alturaBarra - 5;
+
+        ctx.fillStyle = 'red';
+        ctx.fillRect(x, y, larguraBarra, alturaBarra);
+
+        ctx.strokeStyle = 'black';
+        ctx.strokeRect(x, y, this.width, alturaBarra);
+    }
+}
+
+		
+		class Boss {
+    constructor(x, y, speed, imgSrc) {
+        this.x = x;
+        this.y = y;
+        this.width = 300; 
+        this.height = 300;
+        this.speed = speed;
+        this.vida = 1000;
+
+        this.img = new Image();
+        this.img.src = imgSrc;
+    }
+
+    draw(ctx) {
+        ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+        this.desenharBarraVida(ctx);
+    }
+ update(posicaoX) {
+        this.x += this.speed;
+
+      
+        if (this.x < 0 || this.x > cenarioWidth - this.width) {
+            this.speed *= -1; 
+        }
+    }
+
+    desenharBarraVida(ctx) {
+        var larguraBarra = this.width * (this.vida / 1000); 
+        var alturaBarra = 20;
+        var x = this.x;
+        var y = this.y - alturaBarra - 5;
+
+        ctx.fillStyle = 'red';
+        ctx.fillRect(x, y, larguraBarra, alturaBarra);
+
+        ctx.strokeStyle = 'black';
+        ctx.strokeRect(x, y, this.width, alturaBarra);
+    }
+}
+
+
+   function criarInimigos() {
+    var posicoesInimigos = [
+        { x: 800, y: 420 },
+        { x: 950, y: 420 },
+        { x: 1100, y: 420 },
+		{ x: 1250, y: 420 }
+    ];
+    
+    var velocidadeInimigo = 2; 
+
+    for (var i = 0; i < posicoesInimigos.length; i++) {
+        var posicao = posicoesInimigos[i];
+        var inimigo = new Inimigo(posicao.x, posicao.y, velocidadeInimigo, 'inimigo.png');
+        inimigos.push(inimigo);
+    }
+}
+	
+
+        function desenharBarraVida() {
+            var x = 20;
+            var y = 20;
+            var largura = 200;
+            var altura = 30;
+            var bordaRaio = 5;
+            var bordaEspessura = 4;
+
+            var larguraVida = (vidaAtual / vidaMaxima) * largura;
+
+            desenhador.beginPath();
+            desenhador.moveTo(x + bordaRaio, y);
+            desenhador.lineTo(x + largura - bordaRaio, y);
+            desenhador.quadraticCurveTo(x + largura, y, x + largura, y + bordaRaio);
+            desenhador.lineTo(x + largura, y + altura - bordaRaio);
+            desenhador.quadraticCurveTo(x + largura, y + altura, x + largura - bordaRaio, y + altura);
+            desenhador.lineTo(x + bordaRaio, y + altura);
+            desenhador.quadraticCurveTo(x, y + altura, x, y + altura - bordaRaio);
+            desenhador.lineTo(x, y + bordaRaio);
+            desenhador.quadraticCurveTo(x, y, x + bordaRaio, y + bordaRaio);
+            desenhador.closePath();
+
+            desenhador.fillStyle = "#ff0000";
+            desenhador.fillRect(x, y, larguraVida, altura);
+
+            desenhador.lineWidth = bordaEspessura;
+            desenhador.strokeStyle = "#000000";
+            desenhador.stroke();
+        }
+
+       function expandirCenario() {
+    if (numExpansoes < maxExpansoes) {
+        numExpansoes++;
+        posicaoX = 0;
+        fundo.src = "fundoc2.png";
+        if (numExpansoes >= 1) {
+            var boss = new Boss(800, 210, 2, 'inimigo.png');
+            inimigos.push(boss);
+        }
+        criarMoedas(); 
+    }
+}
+
+        function atirar() {
+            var projetil = {
+                x: posicaoX + (viradoParaDireita ? 100 : -50),
+                y: alturaPuloAtual + 10,
+                width: 150,
+                height: 150,
+                velocidade: viradoParaDireita ? projetilVelocidade : -projetilVelocidade
+            };
+            projeteis.push(projetil);
+			
+			 var shootSound = document.getElementById("shootSound");
+            shootSound.currentTime = 0;
+            shootSound.play();
+        }
+
+      function desenharProjeteis() {
+    projeteis.forEach(function(projetil) {
+	  if (mostrarHitbox) desenharHitbox(projetil);
+        desenhador.save();
+        if (!viradoParaDireita) {
+            desenhador.scale(-1, 1);
+            desenhador.translate(-2 * projetil.x - projetil.width, 0);
+        }
+        desenhador.drawImage(projetilImg, projetil.x, projetil.y, projetil.width, projetil.height);
+        desenhador.restore();
+    });
+    }
+
+      function atualizarProjeteis() {
+    projeteis.forEach(function(projetil, index) {
+        projetil.x += projetil.velocidade;
+
+        inimigos.forEach(function(inimigo, inimigoIndex) {
+            if (colisao(projetil, inimigo)) {
+                inimigo.vida -= 20;
+                if (inimigo.vida <= 0) {
+                    atualizarPontuacao(inimigo instanceof Boss ? 500 : 100); 
+                    inimigos.splice(inimigoIndex, 1);
+                }
+                projeteis.splice(index, 1);
+            }
+        });
+
+        if (projetil.x > cenarioWidth || projetil.x < 0) {
+            projeteis.splice(index, 1);
+        }
+    });
+}
+
+
+        function colisao(obj1, obj2) {
+            return obj1.x < obj2.x + obj2.width &&
+                   obj1.x + obj1.width > obj2.x &&
+                   obj1.y < obj2.y + obj2.height &&
+                   obj1.y + obj1.height > obj2.y;
+        }
+
+        function tomarDano(dano) {
+            vidaAtual -= dano;
+            if (vidaAtual < 0) {
+                vidaAtual = 0;
+            }
+        }
+		  function atualizarPontuacao(pontos) {
+                 score += pontos;
+                }
+				
+				function desenharPontuacao() {
+                      desenhador.font = "25px 'Press Start 2P'";  
+                    desenhador.fillStyle = "white";
+                    desenhador.fillText("SCORE:" + score, 1000, 50);
+}
+    function criarMoedas() {
+    var larguraMoeda = 50;
+    var alturaMoeda = 50;
+    var y = 450;
+    var espaçamentoHorizontal = 50;
+    var yAlternativo = 300;
+    var quantidadeMoedas = 15;
+
+    for (var i = 0; i < quantidadeMoedas; i++) {
+        var x = 300 + (i * espaçamentoHorizontal);
+        moedas.push({ x: x, y: y, width: larguraMoeda, height: alturaMoeda });
+    }
+
+    
+    var quantMoedasLinhaSuperior = 15;
+    for (var j = 0; j < quantMoedasLinhaSuperior; j++) {
+        var xSuperior = 335 + (j * espaçamentoHorizontal);
+        moedas.push({ x: xSuperior, y: yAlternativo, width: larguraMoeda, height: alturaMoeda });
+    }
+}
+
+
+        function desenharMoedas() {
+            moedas.forEach(function(moeda) {
+                desenhador.drawImage(moedaImg, moeda.x, moeda.y, moeda.width, moeda.height);
+            });
+        }
+     function desenharContagemMoedas() {
+	  desenhador.fillStyle = "black";
+    desenhador.strokeStyle = "black";
+    desenhador.lineWidth = 2;
+    desenhador.shadowColor = "black";
+    desenhador.shadowOffsetX = 2;
+    desenhador.shadowOffsetY = 2;
+    desenhador.shadowBlur = 5;
+	desenhador.shadowColor = "rgba(0, 0, 0, 0.5)";
+   
+	 
+    desenhador.drawImage(coinh, 20, 50, 200, 75);
+    desenhador.drawImage(moedaImg, 10, 63, 45, 45); 
+
+    desenhador.fillStyle = "white";
+    desenhador.font = "25px 'Bebas Neue'";
+    desenhador.fillText(contagemMoedas, 60, 94);
+}	
+ function verificarColisaoMoedas() {
+    moedas.forEach(function(moeda, index) {
+        if (colisao({x: posicaoX, y: alturaPuloAtual, width: 200, height: 200}, moeda)) {
+            moedas.splice(index, 1);
+            contagemMoedas++;
+            coletarMoeda(moeda.x, moeda.y);
+        }
+    });
+}
+ function desenharHitbox(obj) {
+    desenhador.strokeStyle = "red";
+    desenhador.lineWidth = 2;
+    desenhador.strokeRect(obj.x, obj.y, obj.width, obj.height);
+}
+function coletarMoeda(x, y) {
+    moedasColetadas.push({ x: x, y: y, frame: 0 });
+    tocarSomMoeda();
+}
+
+function tocarSomMoeda() {
+    somMoeda.play();
+}
+
+function animarMoedaColetada() {
+    for (var i = 0; i < moedasColetadas.length; i++) {
+        var moeda = moedasColetadas[i];
+        desenhador.drawImage(moedaImg, moeda.x, moeda.y, 30, 30);
+
+        moeda.y -= 2;
+        moeda.frame++;
+
+        if (moeda.frame > 30) {
+            moedasColetadas.splice(i, 1);
+            i--;
+        }
+    }
+}
+
+        window.onload = IniciaJogo;
+  
+    </script>
+</body>
+</html>
